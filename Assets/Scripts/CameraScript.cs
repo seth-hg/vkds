@@ -44,6 +44,8 @@ public class CameraScript : MonoBehaviour {
 	private float cameraSize;
 	private string debugStr = null;
 
+	private GameObject arrowPlayer, arrowEnemy;
+
 	private bool[,] locationMap;// = new bool[9,19]; 
 
 	void Start() {
@@ -69,6 +71,13 @@ public class CameraScript : MonoBehaviour {
 		newRound ();
 
 		isEnemyTurn = Random.Range(0, 2) == 0;
+		arrowPlayer = GameObject.Find ("arrowPlayer");
+		arrowEnemy = GameObject.Find ("arrowEnemy");
+		if (isEnemyTurn) {
+			arrowPlayer.SetActive (false);
+		} else {
+			arrowEnemy.SetActive (false);
+		}
 	}
 
 	// Update is called once per frame
@@ -187,6 +196,13 @@ public class CameraScript : MonoBehaviour {
 		// TODO: 当前回合结束，发送READY给server
 		isEnemyTurn = !isEnemyTurn;
 		isPending = false;
+		if (isEnemyTurn) {
+			arrowEnemy.SetActive(true);
+			arrowPlayer.SetActive(false);
+		} else {
+			arrowEnemy.SetActive(false);
+			arrowPlayer.SetActive(true);
+		}
 		currentRound += 1;
 		if (currentRound % 2 == 0)
 			newRound ();

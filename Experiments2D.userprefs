@@ -1,12 +1,12 @@
 ﻿<Properties>
-  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" PreferredExecutionTarget="MonoDevelop.Default" />
-  <MonoDevelop.Ide.Workbench ActiveDocument="Assets\Scripts\MainMenu.cs">
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" />
+  <MonoDevelop.Ide.Workbench ActiveDocument="Assets\Scripts\CameraScript.cs">
     <Files>
-      <File FileName="Assets\Scripts\CameraScript.cs" Line="1" Column="1" />
+      <File FileName="Assets\Scripts\CameraScript.cs" Line="75" Column="43" />
       <File FileName="Assets\Scripts\NetworkDemo.cs" Line="1" Column="1" />
-      <File FileName="Assets\Scripts\HealthScript.cs" Line="16" Column="37" />
+      <File FileName="Assets\Scripts\HealthScript.cs" Line="1" Column="1" />
       <File FileName="Assets\Scripts\ItemScript.cs" Line="1" Column="1" />
-      <File FileName="Assets\Scripts\MainMenu.cs" Line="24" Column="19" />
+      <File FileName="Assets\Scripts\MainMenu.cs" Line="22" Column="14" />
     </Files>
   </MonoDevelop.Ide.Workbench>
   <MonoDevelop.Ide.DebuggingService.Breakpoints>
