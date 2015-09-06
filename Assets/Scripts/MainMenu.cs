@@ -8,7 +8,7 @@ public class MainMenu : MonoBehaviour {
 	}
 
 	public void onClickLobby () {
-		Application.LoadLevel ("lobby");
+		Application.LoadLevel ("battleNetwork");
 	}
 
 	public void onClickSettings () {

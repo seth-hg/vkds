@@ -1,72 +1,182 @@
 ﻿using UnityEngine;
 using System.Collections;
 
+public static class preferences {
+	// 可调整的参数
+	public static float forceMax = 200.0f;		// 最大击球力度
+	public static float arrowMaxLen = 200.0f;	// 击球辅助线最大长度
+	public static float drag = 2.0f;
+
+	// 各项参数的可调整范围
+	public static float forceMax_Max = 500.0f;
+	public static float forceMax_Min = 50.0f;
+	public static float arrowMaxLen_Max = 500.0f;
+	public static float arrowMaxLen_Min = 100.0f;
+	public static float drag_Max = 10.0f;
+	public static float drag_Min = 1.0f;
+}
+
+public class itemAllocator {
+	private bool[,] locationMap; 
+	private int Cols, Rows;
+	private int bgWidth, bgHeight;			// 背景尺寸
+	private int gridWidth, gridHeight;		// 网格尺寸
+	
+	public void initMap(int nCols, int nRows, int width, int height) {
+		int col, row;
+		locationMap = new bool[nCols, nRows];
+		for (col = 0; col < nCols; col ++)
+			for (row = 0; row < nRows; row ++)
+				locationMap [col, row] = false;
+		Cols = nCols;
+		Rows = nRows;
+		bgWidth = width;
+		bgHeight = height;
+		
+		// 初始化道具网格
+		gridWidth = bgWidth / 10;
+		gridHeight = bgHeight / 20;
+	}
+
+	public Vector2 allocItem () {
+		int iCol, iRow;
+		
+		while (true) {
+			iCol = Random.Range (0, Cols);
+			iRow = Random.Range (0, Rows);
+			
+			if (available(iCol, iRow)) {
+				// if this position is not occupied
+				break;
+			}
+		}
+		markLocation (iCol, iRow);
+
+		return grid2pos(iCol, iRow);
+	}
+
+	bool available(int col, int row) {
+		return locationMap [col, row] == false;
+	}
+
+	void markLocation (int col, int row) {
+		locationMap [col, row] = true;
+	}
+
+	void clearLocation (int col, int row) {
+		locationMap [col, row] = false;
+	}
+
+	Vector2 grid2pos(int col, int row) {
+		float x = ((col + 1.0f) * gridWidth - bgWidth / 2) / 100.0f;
+		float y = ((row + 1.0f) * gridHeight - bgHeight / 2)/ 100.0f;
+		
+		return new Vector2 (x, y);
+	}
+	
+	Vector2 pos2grid(float x, float y) {
+		float col, row;
+		
+		x = x - gridWidth / 2;
+		y = y - gridHeight / 2;
+		if (x < 0)
+			col = 0;
+		else
+			col = x / gridWidth;
+		
+		if (y < 0)
+			row = 0;
+		else
+			row = y / gridHeight;
+		
+		return new Vector2 (col, row);
+	}
+
+	public void markPosition (Vector2 pos) {
+		Vector2 loc = pos2grid (pos.x, pos.y);
+		markLocation ((int)loc.x, (int)loc.y);
+	}
+
+	public void clearPosition (Vector2 pos) {
+		Vector2 loc = pos2grid (pos.x, pos.y);
+		clearLocation ((int)loc.x, (int)loc.y);
+	}
+}
+
 public class CameraScript : MonoBehaviour {
 	
 	public Material mat;
 	public Color color = Color.red;
-	public float arrowMaxLen = 500.0f;	// 击球辅助线最大长度
-	public float forceMax = 100.0f;		// 最大击球力度
-	private float forceFactor;	// 击球力量系数
 
-	public Transform pieceTrans;		// 用于生成对手小球
+	// 随机生成player和enemy
+	public Transform playerPrefab;
+	public Transform enemyPrefab;
+	// 用于每回合随机生成道具
 	public Transform[] itemPrefabs;		// 道具perfabs
+	public int[] itemProb;				// 各种道具的出现概率
 
 	// 背景图片的尺寸
 	public int bgWidth;
 	public int bgHeight;
-
-	// 
-	private bool isEnemyTurn = false;	// 对手回合
-	private bool isPending = false;		// 等待回合结束(所有物体停止运动)
+	
+	private float forceFactor;			// 击球力量系数
 
 	// selecting ball
 	private RaycastHit2D hit;
 	private GameObject ball;			// 当前被选中的小球
 
-	public int itemsPerRound = 2;		// 每回合产生的道具数
+	//
+	private bool isEnemyTurn = false;	// 对手回合
+	private bool isPending = false;		// 等待回合结束(所有物体停止运动)
 	public int currentRound = 0;		// 当前回合数
 
-	// drawing arrow & attack
+	// 用于绘制辅助线
 	private bool mouse_clicked = false;
 	private Vector2 arrowStart;
 	private Vector2 arrowEnd;
 	private Vector3 startVertex;
 
-	private int playerScore, enemyScore;
 	private bool playerReady = true, enemyReady = true;
-	private GameObject settings;
-	private bool settingsActive = false;
 
+	// 用于相机的缩放
 	private Vector3 savedPos;
-	private int frameCounter;
-
 	private float cameraSize;
+	
 	private string debugStr = null;
 
+	// 指示箭头
 	private GameObject arrowPlayer, arrowEnemy;
 
-	private bool[,] locationMap;// = new bool[9,19]; 
+	//private bool[,] locationMap; 
+	//public itemAllocator iAllocator;
+	public ItemGenScript itemGenerator;
 
 	void Start() {
 		cameraSize = bgHeight / 200.0f;
 		//cameraSize = 3.2f;
 		Camera.main.orthographicSize = cameraSize;
 		debugStr = cameraSize.ToString ();
-		
-		playerScore = 5;
-		enemyScore = 5;
-		frameCounter = 0;
 
-		arrowMaxLen = Screen.height / 5.0f;
-		forceFactor = forceMax / arrowMaxLen;
-		Debug.Log ("arrowMaxLen: " + arrowMaxLen);
-		Debug.Log ("forceFactor: " + forceFactor);
-		int col, row;
-		locationMap = new bool[9, 19];
-		for (col = 0; col < 9; col ++)
-			for (row = 0; row < 19; row ++)
-				locationMap [col, row] = false;
+		//preferences.arrowMaxLen = Screen.height / 5.0f;
+
+		forceFactor = preferences.forceMax / preferences.arrowMaxLen;
+
+		/*
+		iAllocator = new itemAllocator ();
+		iAllocator.initMap (9, 19, bgWidth, bgHeight);
+
+		// 标记Actor所在的位置
+		GameObject[] actors = GameObject.FindGameObjectsWithTag ("player");
+		foreach (GameObject a in actors) {
+			iAllocator.markPosition(a.transform.position);
+		}
+		
+		actors = GameObject.FindGameObjectsWithTag ("enemy");
+		foreach (GameObject a in actors) {
+			iAllocator.markPosition(a.transform.position);
+		}
+		*/
+		itemGenerator = gameObject.GetComponent<ItemGenScript> ();
 
 		newRound ();
 
@@ -78,6 +188,9 @@ public class CameraScript : MonoBehaviour {
 		} else {
 			arrowEnemy.SetActive (false);
 		}
+
+		Debug.Log ("arrowMaxLen = " + preferences.arrowMaxLen);
+		Debug.Log ("forceMax = " + preferences.forceMax);
 	}
 
 	// Update is called once per frame
@@ -97,12 +210,12 @@ public class CameraScript : MonoBehaviour {
 		*/
 		arrowEnd = Input.mousePosition;
 		Vector2 dir = arrowStart - arrowEnd;
-		float angle = Vector2.Angle(dir, new Vector2(1, 0));
+		//float angle = Vector2.Angle(dir, new Vector2(1, 0));
 		float len = Vector2.Distance(arrowStart, arrowEnd);
 
-		if (len > arrowMaxLen) {
-			dir.x = dir.x * arrowMaxLen / len;
-			dir.y = dir.y * arrowMaxLen / len;
+		if (len > preferences.arrowMaxLen) {
+			dir.x = dir.x * preferences.arrowMaxLen / len;
+			dir.y = dir.y * preferences.arrowMaxLen / len;
 			arrowEnd = arrowStart + dir;
 		}
 		arrowEnd = arrowStart + dir;
@@ -119,10 +232,15 @@ public class CameraScript : MonoBehaviour {
 				}
 
 				mouse_clicked = true;
-				// 调整main camera
+				// 只在当前小球靠近屏幕边缘的时候调整camera
 				savedPos = Camera.main.transform.position;
-				Camera.main.orthographicSize = cameraSize / 1.5f;
-				Camera.main.transform.position = new Vector3(ball.transform.position.x, ball.transform.position.y, -10);
+				Vector2 ballPos = ball.transform.position;
+				//float newX, newY;
+				if (ballPos.x < bgWidth * (-0.6f) / 200.0f || ballPos.x > bgWidth * 0.6f / 200.0f ||
+				    ballPos.y < bgHeight * (-0.6f) / 200.0f || ballPos.y > bgWidth * 0.6f / 200.0f) {
+					//Camera.main.orthographicSize = cameraSize / 1.5f;
+					Camera.main.transform.position = new Vector3(ball.transform.position.x, ball.transform.position.y, -10);
+				}
 
 				arrowStart = Camera.main.WorldToScreenPoint(ball.transform.position);
 				startVertex = new Vector3 (arrowStart.x / Screen.width, arrowStart.y / Screen.height, 0);
@@ -143,19 +261,11 @@ public class CameraScript : MonoBehaviour {
 				dir.x = dir.x * forceFactor;
 				dir.y = dir.y * forceFactor;
 
-				/*
-				Rigidbody2D rb = ball.GetComponent<Rigidbody2D> ();
-				rb.AddForce (dir);
-
-				HealthScript hs = ball.GetComponent<HealthScript> ();
-				hs.isReady = false;
-				hs.attacking = true;
-				*/
 				Camera.main.transform.position = savedPos;
-				Camera.main.orthographicSize = cameraSize;
+				//Camera.main.orthographicSize = cameraSize;
+				itemGenerator.clearPosition (ball.transform.position);
 				ball.GetComponent<HealthScript> ().Attack(dir);
 				isPending = true;
-				Debug.Log ("velocity: " + ball.GetComponent<Rigidbody2D>().velocity);
 			}
 		}
 	}
@@ -272,6 +382,7 @@ public class CameraScript : MonoBehaviour {
 				// 等待对手就绪?
 
 				// 暂时用随机生成的放置对手的小球
+
 				int i;
 				float rand_x, rand_y;
 				for (i = 0; i < 3; i++) {
@@ -284,7 +395,7 @@ public class CameraScript : MonoBehaviour {
 					//Vector2 rand_pos = Camera.main.ScreenToWorldPoint(new Vector2(rand_x, rand_y));
 					Vector2 rand_pos = new Vector2(rand_x, rand_y);
 
-					Transform new_ball = Instantiate(pieceTrans);
+					Transform new_ball = Instantiate(enemyPrefab);
 					new_ball.position = rand_pos;
 					new_ball.name = "enemy" + i;
 					HealthScript hs = new_ball.GetComponent<HealthScript>();
@@ -303,10 +414,10 @@ public class CameraScript : MonoBehaviour {
 		}
 	}
 
+	/*
 	Vector2 randomPos()
 	{
 		int iCol, iRow;
-		float iPosX, iPosY;
 
 		while (true) {
 			iCol = Random.Range (0, 9);
@@ -320,38 +431,40 @@ public class CameraScript : MonoBehaviour {
 
 		return grid2pos (iCol, iRow);
 	}
-
-	Vector2 grid2pos(int col, int row)
-	{
-		float x = ((col + 1.0f) * 36.0f - bgWidth / 2) / 100.0f;
-		float y = ((row + 1.0f) * 32.0f - bgHeight / 2)/ 100.0f;
-
-		return new Vector2 (x, y);
-	}
-
+	*/
+	
 	// 产生一个新的回合
 	void newRound()
 	{
-		GameObject o;
 		int i;
 
 		// 检查道具效果是否到期，如果到期则取消
-		for (i = 1; i <= 3; i++) {
+		GameObject[] actors = GameObject.FindGameObjectsWithTag ("player");
+		foreach (GameObject a in actors) {
+			HealthScript hs = a.GetComponent<HealthScript>();
+			if (hs.attackEnhanceTurnLeft > 0)
+				hs.attackEnhanceTurnLeft -= 1;
+			if (hs.attackEnhanceTurnLeft == 0)
+				hs.attack = 0;
 		}
-
-		// 清除当前场上剩余道具
-		GameObject[] items = GameObject.FindGameObjectsWithTag ("items");
-		foreach (GameObject item in items) {
-			;
-			Destroy (item);
+		
+		actors = GameObject.FindGameObjectsWithTag ("enemy");
+		foreach (GameObject a in actors) {
+			HealthScript hs = a.GetComponent<HealthScript>();
+			if (hs.attackEnhanceTurnLeft > 0)
+				hs.attackEnhanceTurnLeft -= 1;
+			if (hs.attackEnhanceTurnLeft == 0)
+				hs.attack = 0;
 		}
 
 		// 随机生成新的道具
-		for (i = 0; i < itemsPerRound; i ++) {
-			int iType = Random.Range(0, itemPrefabs.Length);
-			Vector2 pos = randomPos();
+		for (i = 0; i < itemProb.Length; i++) {
+			int p = Random.Range(0, 100);
+			if (p >= itemProb[i])
+				continue;
+			Vector2 pos = itemGenerator.allocItem(false);
 			//Vector2 pos = Camera.main.ScreenToWorldPoint(new Vector2(iPosX, iPosY));
-			Transform iTransform = Instantiate(itemPrefabs[iType]);
+			Transform iTransform = Instantiate(itemPrefabs[i]);
 			iTransform.position = pos;
 		}
 	}

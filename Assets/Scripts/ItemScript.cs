@@ -11,6 +11,20 @@ public class ItemScript : MonoBehaviour {
 	}
 	public ItemType type = ItemType.Score;
 	public int effectiveTurns = 1;			// 有效回合数
+	public int probability;					// 道具在每回合开始之前出现的概率
+	public int damage;						// 碰撞时收到的伤害
+
+	public bool isObstacle()
+	{
+		return type == ItemType.Obstacle;
+	}
+
+	void OnTriggerEnter2D(Collider2D otherCollider) {
+		if (type == ItemType.Obstacle || type == ItemType.Trap)
+			return;
+		Debug.Log ("item overlapped");
+		Destroy (gameObject);
+	}
 
 	/*
 	void OnTriggerEnter2D(Collider2D otherCollider)

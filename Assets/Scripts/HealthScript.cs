@@ -8,9 +8,6 @@ public class HealthScript : MonoBehaviour {
 	public int defense = 0;
 	public int heal = 0;
 	public bool isEnemy;
-	public int attackEnhance = 0;
-	public int defenseEnhance = 0;
-	public int healEnhance = 0;
 	public int attackEnhanceTurnLeft = 0;
 	public int defenseEnhanceTurnLeft = 0;
 	public int healEnhanceTurnLeft = 0;
@@ -46,10 +43,10 @@ public class HealthScript : MonoBehaviour {
 		}
 	}
 
-	public void Restore (int hp)
+	public void Restore (int p)
 	{
 		// TODO: 是否要设定hp的最大值？
-		hp += hp;
+		hp += p;
 	}
 
 	void OnCollisionEnter2D(Collision2D collision)
@@ -58,18 +55,21 @@ public class HealthScript : MonoBehaviour {
 		 */
 		//Debug.Log ("OnCollisionEnter2D: " + collision.gameObject);
 		HealthScript hs = collision.gameObject.GetComponent<HealthScript> ();
-		if (hs && hs.isEnemy != isEnemy) {
-			// FIXME: 伤害逻辑，主动攻击者不受伤害，被攻击这受伤害
-			if (attack + attackEnhance > 0) {
-				hs.Damage (attack + attackEnhance);
-			}
+		if (hs && hs.attack < attack) { // && hs.isEnemy != isEnemy) {
+			// 攻击力不为0时，对对手和本方都会造成伤害
+			hs.Damage (attack - hs.attack);
 		}
-	}
 
+		// 碰到树桩受伤害
+		ItemScript iScript = collision.gameObject.GetComponent<ItemScript> ();
+		if (iScript && iScript.isObstacle ())
+			Damage (iScript.damage);
+	}
+	
 	void OnTriggerEnter2D(Collider2D otherCollider) {
 		GameObject iObject = otherCollider.gameObject;
 		ItemScript iScript = iObject.GetComponent<ItemScript>();
-		Debug.Log ("hit a trigger: " + iScript.type);
+		//Debug.Log ("hit a trigger: " + iScript.type);
 		switch (iScript.type) {
 		case ItemScript.ItemType.Score:
 			Destroy (iObject);
@@ -79,13 +79,15 @@ public class HealthScript : MonoBehaviour {
 			// hp = 0
 			Damage(hp);
 			break;
+		/*
 		case ItemScript.ItemType.Obstacle:
 			// 受到伤害HP -= 1
 			Damage (1);
 			break;
+		*/
 		case ItemScript.ItemType.Fire:
 			// 接触到火焰，增加攻击力
-			attackEnhance = 1;
+			attack = 1;
 			attackEnhanceTurnLeft = iScript.effectiveTurns;
 			Destroy(iObject);
 			break;
@@ -99,6 +101,9 @@ public class HealthScript : MonoBehaviour {
 		Vector2 v = rb.velocity;
 		if (Mathf.Abs(v.x) < 0.1 && Mathf.Abs(v.y) < 0.1) {
 			rb.velocity = Vector2.zero;
+			// 标记新位置
+			ItemGenScript igs = Camera.main.GetComponent<ItemGenScript> ();
+			igs.markPosition(gameObject.transform.position);
 		}
 	}
 }
