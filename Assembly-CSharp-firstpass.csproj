@@ -5,7 +5,7 @@
 	<Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
 	<ProductVersion>10.0.20506</ProductVersion>
 	<SchemaVersion>2.0</SchemaVersion>
-	<ProjectGuid>{A9E4678A-1B88-557E-1D83-8302FE02AE51}</ProjectGuid>
+	<ProjectGuid>{2A7DCFA7-0331-20AC-DC70-044180A4DAE6}</ProjectGuid>
 	<OutputType>Library</OutputType>
 	<AppDesignerFolder>Properties</AppDesignerFolder>
 	<RootNamespace></RootNamespace>
@@ -103,9 +103,13 @@
      <Compile Include="Assets\Standard Assets\VectorScripts\VisibilityControl.cs" />
      <Compile Include="Assets\Standard Assets\VectorScripts\VisibilityControlAlways.cs" />
      <Compile Include="Assets\Standard Assets\VectorScripts\VisibilityControlStatic.cs" />
+     <None Include="Assets\Resources\audio\result-defeated.txt" />
+     <None Include="Assets\Resources\audio\bg.txt" />
+     <None Include="Assets\Resources\images\gameObject\snag-stone.txt" />
      <None Include="Assets\Standard Assets\Network\Instruction.txt" />
      <None Include="Assets\Fonts\3698\3698font.txt" />
      <None Include="Assets\Standard Assets\CrossPlatformInput\CrossPlatformInputGuidelines.txt" />
+     <None Include="Assets\Resources\audio\result-victory.txt" />
  <Reference Include="UnityEngine.UI">
  <HintPath>C:/Program Files/Unity/Editor/Data/UnityExtensions/Unity/GUISystem/UnityEngine.UI.dll</HintPath>
  </Reference>

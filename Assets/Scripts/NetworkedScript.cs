@@ -6,38 +6,27 @@ using System.Net.Sockets;
 using System.Text;
 using System.IO;
 
-/*
-public static class preferences {
-	// 可调整的参数
-	public static float forceMax = 100.0f;		// 最大击球力度
-	public static float arrowMaxLen = 200.0f;	// 击球辅助线最大长度
-	public static float drag = 2.0f;
-
-	// 各项参数的可调整范围
-	public static float forceMax_Max = 500.0f;
-	public static float forceMax_Min = 50.0f;
-	public static float arrowMaxLen_Max = 500.0f;
-	public static float arrowMaxLen_Min = 100.0f;
-	public static float drag_Max = 10.0f;
-	public static float drag_Min = 1.0f;
-}
-*/
-
 public class NetworkedScript : MonoBehaviour {
 	
 	public Material mat;
 	public Color color = Color.red;
-	
+
+	// 可调整的参数
+	public float forceMax = 600.0f;      // 最大击球力度
+	public float arrowMaxLen = 150.0f;   // 击球辅助线最大长度
+	public float drag = 1.5f;
+
 	// 随机生成player和enemy
 	public Transform playerPrefab;
 	public Transform enemyPrefab;
 
 	// 用于每回合随机生成道具
 	public Transform[] itemPrefabs;			// 动态道具，每回合按概率生成
-	public Transform[] staticItemPrefabs;	// 静态道具，游戏开始时生成
-	public ItemGenScript itemGenerator;
-	private Vector2[] newItemPos;
-	public bool[] createNewItem;
+	public int[] itemProbs;					// 动态道具出现的概率
+	public int nStaticItems;				// 静态道具数目，放在数组最前面
+
+	// 记录本方和对手actors
+	private GameObject[] playerActors, enemyActors;
 
 	// 背景图片的尺寸
 	public int bgWidth;
@@ -52,7 +41,7 @@ public class NetworkedScript : MonoBehaviour {
 	//
 	private bool isEnemyTurn = false;	// 对手回合
 	private bool isPending = false;		// 等待回合结束(所有物体停止运动)
-	private bool isSyncing = false;		// 等待服务器同步
+	private bool isWaiting = false;		// 等待对手消息
 	public int currentRound = 0;		// 当前回合数
 
 	// drawing arrow & attack
@@ -60,8 +49,6 @@ public class NetworkedScript : MonoBehaviour {
 	private Vector2 arrowStart;
 	private Vector2 arrowEnd;
 	private Vector3 startVertex;
-
-	//private bool playerReady = true, enemyReady = true;
 
 	// 用于相机的缩放
 	private Vector3 savedPos;
@@ -72,219 +59,94 @@ public class NetworkedScript : MonoBehaviour {
 	// 指示箭头
 	private GameObject arrowPlayer, arrowEnemy;
 
-	// 网络相关
-	public string server_addr;
-	public int server_port;
-	private TcpClient client = null;
-	private NetworkStream stream = null;
-	private StreamReader sReader = null;
-	private string roomID;
-	private int playerID;
-	
-	string[] getResponse() {
-		//byte[] buffer = new byte[128];
-		//int ret = stream.Read(buffer, 0, 128);
-		//string resp = Encoding.Default.GetString(buffer[0:ret]).TrimEnd("\n".ToCharArray());
-		string resp = sReader.ReadLine ().TrimEnd('\n');
-		Debug.Log ("resp: " + resp);
-		return resp.Split(':');
-	}
+	// 网络客户端
+	public string serverAddr;
+	public int serverPort;
+	ClientScript client;
 
-	bool sendJoin() {
-		if (client == null || !client.Connected) {
-			Debug.Log ("server not connected");
-			return false;
+	private const int ST_WAIT 	= -1;	// 等待slave加入
+	private const int ST_NEW 	= 0;	// 启动新回合
+	private const int ST_MASTER = 1;	// master操作
+	private const int ST_SLAVE 	= 2;	// slave操作
+
+	private int gameStatus;		// 游戏当前的状态
+	private bool isOperating;	// 是否用户操作
+	private int fixedUpdateLoopCounter;	// 每10次FixedUpdate()调用拉取一次消息
+	
+	bool randomPos (float minDist, GameObject[] playerObjs, GameObject[] enemyObjs, GameObject[] itemObjs, out int x, out int y) {
+		x = Random.Range(-15, 15);
+		y = Random.Range(-30, 30);
+		Vector2 pos = new Vector2(x / 10.0f, y / 10.0f);
+
+		foreach (GameObject a in playerObjs) {
+			if (a.activeInHierarchy && Vector2.Distance(pos, a.transform.position) < minDist)
+				return false;
 		}
-		Debug.Log ("Sending JOIN to server");
-		try {
-			byte[] buffer = Encoding.Default.GetBytes("JOIN\n");
-			stream.Write(buffer, 0, 5);
-			Debug.Log ("ok");
-		} catch {
-			Debug.Log ("failed");
-			return false;
+
+		foreach (GameObject a in enemyObjs) {
+			if (a.activeInHierarchy && Vector2.Distance(pos, a.transform.position) < minDist)
+				return false;
 		}
-		
-		try {
-			string[] args = getResponse();
-			//Debug.Log ("RET: " + args[0]);
-			roomID = args[1];
-			playerID = int.Parse(args[2]);
-		} catch {
-			Debug.Log ("failed recieving response");
+
+		foreach (GameObject a in itemObjs) {
+			if (a.activeInHierarchy && Vector2.Distance(pos, a.transform.position) < minDist)
+				return false;
 		}
-		
+			
 		return true;
-	}
-	
-	int sendMove(int actor, int forceX, int forceY) {
-		if (client == null || !client.Connected) {
-			Debug.Log ("server not connected");
-			return -1;
-		}
-		Debug.Log ("Sending MOVE to server");
-		try {
-			string req = string.Format("MOVE:{0}:{1}:{2}:{3}:{4}\n", roomID, playerID, actor, forceX, forceY);
-			Debug.Log (req);
-			byte[] buffer = Encoding.Default.GetBytes(req);
-			stream.Write(buffer, 0, req.Length);
-			Debug.Log ("ok");
-		} catch {
-			Debug.Log ("failed");
-		}
-		
-		try {
-			string[] args = getResponse();
-			//Debug.Log ("ok " + args[0]);
-		} catch {
-			Debug.Log ("failed recieving response");
-		}
-		return 0;
-	}
-
-	enum ret_t {
-		ERR = -1,
-		WAIT = 0,
-		OK = 1,
-		MOVE = 2,
-		WAITP = 3,	// 等待另一玩家加入
-		NEW = 4,	// 新回合
-	}
-
-	ret_t sendReady(out int actor, out int forceX, out int forceY) {
-		actor = 0;
-		forceX = 0;
-		forceY = 0;
-		if (client == null || !client.Connected) {
-			Debug.Log ("server not connected");
-			return ret_t.ERR;
-		}
-		Debug.Log ("Sending READY to server");
-		try {
-			string req = string.Format("READY:{0}:{1}\n", roomID, playerID);
-			Debug.Log (req);
-			byte[] buffer = Encoding.Default.GetBytes(req);
-			stream.Write(buffer, 0, req.Length);
-			Debug.Log ("ok");
-		} catch {
-			Debug.Log ("failed");
-			return ret_t.ERR;
-		}
-		
-		try {
-			string[] args = getResponse();
-			//Debug.Log ("resp: " + args[0]);
-			if (string.Compare(args[0], "OK") == 0) {
-				// 本方执行操作
-				isPending = false;
-				isEnemyTurn = false;
-				return ret_t.OK;
-			} else if (string.Compare(args[0], "WAIT") == 0) {
-				// 等待对手
-				isPending = true;
-				isEnemyTurn = true;
-				isSyncing = true;
-				return ret_t.WAIT;
-			} else if (string.Compare(args[0], "MOVE") == 0) {
-				// 对手执行了操作
-				actor = int.Parse(args[1]);
-				forceX = int.Parse(args[2]);
-				forceY = int.Parse(args[3]);
-				return ret_t.MOVE;
-			} else if (string.Compare(args[0], "NEW") == 0) {
-				//Debug.Log ("new items created");
-				debugStr = "new items created";
-				// 新回合开始，随机生成道具
-				int gen, col, row;
-				gen = int.Parse(args[1]);
-				if (gen == 1) {
-					col = int.Parse(args[2]);
-					row = int.Parse(args[3]);
-					if (playerID == 1) {
-						col = 8 - col;
-						row = 18 - row;
-					}
-					newItemPos[0] = itemGenerator.grid2pos(col, row);
-					createNewItem[0] = true;
-				}
-
-				gen = int.Parse(args[4]);
-				if (gen == 1) {
-					col = int.Parse(args[5]);
-					row = int.Parse(args[6]);
-					if (playerID == 1) {
-						col = 8 - col;
-						row = 18 - row;
-					}
-					newItemPos[1] = itemGenerator.grid2pos(col, row);
-					createNewItem[1] = true;
-				}
-
-				return ret_t.NEW;
-			} else {
-				return ret_t.ERR;
-			}
-		} catch {
-			Debug.Log ("failed recieving response");
-			return ret_t.ERR;
-		}
 	}
 
 	void Start() {
 		cameraSize = bgHeight / 200.0f;
 		Camera.main.orthographicSize = cameraSize;
 
-		forceFactor = preferences.forceMax / preferences.arrowMaxLen;
+		forceFactor = forceMax / arrowMaxLen;
 
-		itemGenerator = gameObject.GetComponent<ItemGenScript> ();
-
-		// 生成静态道具
-		for (int i = 0; i < staticItemPrefabs.Length; i++) {
-			Transform iTransform = Instantiate(staticItemPrefabs[i]);
-			if (playerID == 0)
-				iTransform.position = itemGenerator.allocItem(false);
-			else
-				iTransform.position = itemGenerator.allocItem(true);
+		// 连接服务器，加入游戏
+		client = gameObject.GetComponent<ClientScript> ();
+		if (client == null) {
+			// TODO: 处理错误
+		}
+		client.Connect (serverAddr, serverPort);
+		if (-1 == client.sendJoin ()) {
+			// TODO: 处理发送JOIN错误
 		}
 
-		// 用于动态道具生成
-		newItemPos = new Vector2[2];
-		createNewItem = new bool[2];
-		createNewItem [0] = false;
-		createNewItem [1] = false;
+		// Slave加入游戏后发送OK给master
+		if (!client.isMaster ()) {
+			Debug.Log ("this client is slave");
+			client.sendOK();
+		}
+		//debugStr = "waiting for player ...";
+		gameStatus = ST_WAIT;
 
-		newRound ();
+		// 保存常用的GameObject
+		// 保存actors
+		playerActors = new GameObject[3];
+		enemyActors = new GameObject[3];
 
-		//isEnemyTurn = Random.Range(0, 2) == 0;
+		for (int i = 0; i < 3; i++) {
+			GameObject obj;
+			obj = GameObject.Find("ball" + (i+1));
+			Debug.Assert(obj != null);
+			playerActors[i] = obj;
+			obj = GameObject.Find("enemy" + (i+1));
+			Debug.Assert(obj != null);
+			enemyActors[i] = obj;
+		}
+
+		// 指向箭头
 		arrowPlayer = GameObject.Find ("arrowPlayer");
-		arrowEnemy = GameObject.Find ("arrowEnemy");
-
 		arrowPlayer.SetActive (false);
+		arrowEnemy = GameObject.Find ("arrowEnemy");
 		arrowEnemy.SetActive (false);
 
-		Debug.Log ("arrowMaxLen = " + preferences.arrowMaxLen);
-		Debug.Log ("forceMax = " + preferences.forceMax);
+		//isSyncing = true;
+		isOperating = false;
+		isWaiting = true;
+		fixedUpdateLoopCounter = 0;
 
-		// 连接服务器
-		client = new TcpClient ();
-		Debug.Log ("connecting to server");
-		try {
-			client.Connect (server_addr, server_port);
-			stream = client.GetStream();
-			sReader = new StreamReader(stream);
-			Debug.Log ("ok");
-		} catch {
-			Debug.Log ("failed");
-		}
-
-		debugStr = "joining a game ...";
-		if (!sendJoin ()) {
-			Debug.Log ("failed joining a game");
-			// TODO: 处理错误
-			return;
-		}
-
-		isSyncing = true;
+		return;
 	}
 
 	// Update is called once per frame
@@ -302,23 +164,24 @@ public class NetworkedScript : MonoBehaviour {
 		}
 		frameCounter = 0;
 		*/
-		// 对手回合啥也不做
-		if (isEnemyTurn || isPending)
+
+		// 等待对手消息中 ...
+		if (!isOperating)
 			return;
 
 		arrowEnd = Input.mousePosition;
 		Vector2 dir = arrowStart - arrowEnd;
 		float len = Vector2.Distance(arrowStart, arrowEnd);
 
-		if (len > preferences.arrowMaxLen) {
-			dir.x = dir.x * preferences.arrowMaxLen / len;
-			dir.y = dir.y * preferences.arrowMaxLen / len;
+		if (len > arrowMaxLen) {
+			dir.x = dir.x * arrowMaxLen / len;
+			dir.y = dir.y * arrowMaxLen / len;
 			arrowEnd = arrowStart + dir;
 		}
 		arrowEnd = arrowStart + dir;
 
-		//if (!isPending && !isEnemyTurn && Input.GetMouseButtonDown (0)) {
-		if (!isPending && Input.GetMouseButtonDown (0)) {
+		//if (!isPending && Input.GetMouseButtonDown (0)) {
+		if (Input.GetMouseButtonDown (0)) {
 			hit = Physics2D.Raycast (Camera.main.ScreenToWorldPoint (Input.mousePosition), Vector2.zero);
 			if (hit) {
 				//ts_mouse_start = System.DateTime.Now;
@@ -345,15 +208,6 @@ public class NetworkedScript : MonoBehaviour {
 			}
 		}
 
-		/*
-		// 初始布局，暂时没有使用
-		if (mouse_clicked && !playerReady) {
-			//Vector2 p = Input.mousePosition;
-			Vector2 p = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-			ball.transform.position = new Vector3(p.x, p.y, -5);
-		}
-		*/
-
 		if (mouse_clicked && Input.GetMouseButtonUp (0)) {
 			mouse_clicked = false;
 
@@ -364,113 +218,196 @@ public class NetworkedScript : MonoBehaviour {
 			int actor = int.Parse(ball.transform.name.ToCharArray()[4].ToString());
 			int forceX = (int)(dir.x * forceFactor);
 			int forceY = (int)(dir.y * forceFactor);
-			sendMove(actor, forceX, forceY);
+			//sendMove(actor, forceX, forceY);
 			ball.GetComponent<HealthScript> ().Attack(new Vector2(forceX, forceY));
-			isPending = true;
-			//Debug.Log ("velocity: " + ball.GetComponent<Rigidbody2D>().velocity);
+			isPending = true;	// 等待actor运动结束
+
+			// 发送操作给slave
+			client.sendMove(actor, forceX, forceY);
+			isWaiting = true;
+			isOperating = false;
 		}
 	}
 
 	void FixedUpdate() {
-		if (isSyncing) {
-			int actor, x, y;
-			Debug.Log ("syncing ...");
-			ret_t ret = sendReady(out actor, out x, out y);
+		debugStr = string.Format ("{0}:{1}:{2}", gameStatus.ToString (), isWaiting, isOperating);
+		//Debug.Log ("FixedUpdate: " + isOperating + isWaiting);
+		// 用户正在操作，跳过所有逻辑
+		if (isOperating)
+			return;
 
-			if (ret == ret_t.WAITP) {
-				// TODO: 显示提示框
-				debugStr = "waiting for player";
-				isSyncing = true;
+		if (isPending) {
+			int nPlayers = 0, nEnemies = 0;
+			foreach (GameObject a in playerActors) {
+				if (a.activeInHierarchy == false)
+					continue;
+				nPlayers += 1;
+				if (a.GetComponent<Rigidbody2D> ().velocity != Vector2.zero) {
+					isPending = true;
+					return;
+				}
+			}
+			
+			foreach (GameObject a in enemyActors) {
+				if (a.activeInHierarchy == false)
+					continue;
+				nEnemies += 1;
+				if (a.GetComponent<Rigidbody2D> ().velocity != Vector2.zero) {
+					isPending = true;
+					return;
+				}
+			}
+
+			arrowPlayer.SetActive(false);
+			arrowEnemy.SetActive(false);
+
+			// 判断游戏结束
+			if (nPlayers == 0) {
+				client.sendClose();
+				Application.LoadLevel ("lose");
+			}
+			
+			if (nEnemies == 0) {
+				client.sendClose();
+				Application.LoadLevel ("win");
+			}
+
+			isPending = false;
+			// 如果是当前客户端为master，并且slave操作刚刚结束，则开始一个新回合
+			if (client.isMaster() && gameStatus == ST_NEW) {
+				newRound(false);
+				isWaiting = true;
+				isOperating = false;
+				return;
+			}
+		}
+
+		//fixedUpdateLoopCounter += 1;
+		if (isWaiting) {
+			if (++fixedUpdateLoopCounter % 30 != 0) {
+				return;
+			}
+			fixedUpdateLoopCounter = 0;
+			Debug.Log ("pulling msg ... ");
+			string[] resp;
+			// 从服务器拉取消息
+			if (!client.pullMsg(out resp)) {
+				// 无消息，返回继续等待
 				return;
 			}
 
-			if (ret == ret_t.WAIT) {
-				isSyncing = true;
-
-				arrowEnemy.SetActive(true);
-				arrowPlayer.SetActive(false);
+			if (resp[0] == "OK") {
+				Debug.Assert(client.isMaster());
+				//gameStatus += 1;	// master进入下一阶段
+				Debug.Log ("slave confirmed, move onto next stage");
+				gameStatus = (gameStatus + 1) % 3;
+				// master发布下一阶段指令
+				switch (gameStatus) {
+				case ST_NEW:
+					// slave加入，第一回合开始
+					newRound(true);
+					isWaiting = true;
+					isOperating = false;
+					break;
+				case ST_MASTER:
+					// master操作
+					isOperating = true;
+					isWaiting = false;
+					arrowPlayer.SetActive(true);
+					break;
+				case ST_SLAVE:
+					// 轮到slave操作，发送YOURS，等待响应
+					client.sendYours();
+					isWaiting = true;
+					arrowEnemy.SetActive(true);
+					break;
+				default:
+					// 无效状态
+					Debug.Log ("shouldn't be here");
+					Debug.Assert(false);
+					break;
+				}
 				return;
-			} else if (ret == ret_t.OK) {
-				isEnemyTurn = false;
+			} else if (resp[0] == "NEW") {
+				Debug.Assert(!client.isMaster());
+				// 收到master命令，开始新回合，创建动态道具
+				int len = resp.Length;
+				for (int i = 3; i < len; i += 3) {
+					int itemID = int.Parse(resp[i]);
+					float posX = int.Parse(resp[i+1]) / 10.0f;
+					float posY = int.Parse(resp[i+2]) / 10.0f;
+
+					Transform iTrans = Instantiate(itemPrefabs[itemID]);
+					iTrans.position = new Vector2(posX, posY);
+				}
+				// 发送OK响应master
+				client.sendOK();
+			} else if (resp[0] == "MOVE") {
+				// 解析对手操作
+				int actorID, forceX, forceY;
+
+				try {
+					actorID = int.Parse(resp[3]) - 1;
+					forceX = - int.Parse(resp[4]);
+					forceY = - int.Parse(resp[5]);
+
+					GameObject actor = enemyActors[actorID];
+					actor.GetComponent<HealthScript>().Attack(new Vector2(forceX, forceY));
+					//actor.GetComponent<Rigidbody2D>().AddForce();
+					isOperating = false;
+					isWaiting = false;
+					isPending = true;
+					// slave收到master的操作后响应OK
+					if (!client.isMaster())
+						client.sendOK();
+				} catch {
+					// 消息解析错误
+					Debug.Log ("invalid msg ...");
+					Debug.Assert(false);
+				}
+
+				// 老鼠运动刚刚开始，不需要后面的检查过程
+				if (client.isMaster()) {
+					// 如果本机是master，则对手刚刚执行完操作，
+					// 等待所有actor停止运动然后开始新回合
+					gameStatus = ST_NEW;
+				} else {
+					// 如果本机是slave，则等待master的下一步指令
+					isWaiting = true;
+				}
+				return;
+			} else if (resp[0] == "YOURS") {
+				Debug.Assert (!client.isMaster());
+				isOperating = true;
 				isPending = false;
-				isSyncing = false;
-				arrowEnemy.SetActive(false);
-				arrowPlayer.SetActive(true);
-			} else if (ret == ret_t.MOVE) {
-				// 对手执行了操作
-				GameObject aObj = GameObject.Find("enemy" + actor);
-				aObj.GetComponent<HealthScript> ().Attack(new Vector2(-x, -y));
-				isPending = true;
+				isWaiting = false;
 				return;
-			} else if (ret == ret_t.ERR) {
-				// TODO: 处理错误
-				return;
+			} else if (resp[0] == "CLOSED") {
+				// 对方退出或掉线，游戏结束，自动获胜
+				isWaiting = false;
+				Application.LoadLevel("win");
+			} else {
+				// 无效消息，尝试重新获取，其实并没有什么卵用，因为服务器和对手都不会重发
+				Debug.Log ("invalid msg: " + resp[0]);
+				isWaiting = true;
 			}
 		}
 
-		if (!isPending)
-			return;
+		// slave等待master发布下一阶段指令
+		if (!client.isMaster ()) {
+			isWaiting = true;
+		} else {
 
-		// 检测运动状态，当所有物体都停止运动时，切换回合
-		GameObject[] actors = GameObject.FindGameObjectsWithTag ("player");
-		int nPlayers = actors.Length;
-		foreach (GameObject a in actors) {
-			if (a.GetComponent<Rigidbody2D>().velocity != Vector2.zero) {
-				isPending = true;
-				return;
-			}
-		}
-		
-		actors = GameObject.FindGameObjectsWithTag ("enemy");
-		int nEnemy = actors.Length;
-		foreach (GameObject a in actors) {
-			if (a.GetComponent<Rigidbody2D>().velocity != Vector2.zero) {
-				isPending = true;
-				return;
-			}
 		}
 
-		if (nPlayers == 0) {
-			Application.LoadLevel("lose");
-			return;
-		}
+		// 老鼠运动都结束，游戏进入下一阶段
+		//gameStatus = (gameStatus + 1) % 3;
 
-		if (nEnemy == 0) {
-			Application.LoadLevel("win");
-			return;
-		}
-
-		// TODO: 当前回合结束，发送READY给server
-		isEnemyTurn = !isEnemyTurn;
-		isPending = false;
-
-		currentRound += 1;
-		if (currentRound % 2 == 0)
-			newRound ();
-		if (isEnemyTurn)
-			Debug.Log ("enemy turn");
-
-		isSyncing = true;
-
-		// 对手行动
-		// 暂时用随机产生
-		/*
-		if (!isPending && isEnemyTurn) {
-
-			int rand_x = Random.Range (0, 100);
-			int rand_y = Random.Range (0, 100);
-			int num = Random.Range (0, 3);
-			GameObject enemyObj = GameObject.Find ("enemy" + num);
-			Rigidbody2D rb = enemyObj.GetComponent<Rigidbody2D> ();
-			rb.AddForce (new Vector2 (rand_x, rand_y));
-
-			isPending = true;
-		}
-		*/
+		return;
 	}
 
 	void OnPostRender() {
-		if (!mouse_clicked) { // || !playerReady) {
+		if (!mouse_clicked) {
 			return;
 		}
 		if (!mat) {
@@ -501,109 +438,85 @@ public class NetworkedScript : MonoBehaviour {
 
 		if (debugStr != null)
 			GUI.Label(new Rect(100, 5, 100, 20), debugStr, style);
-
-		/* 出事布局界面，暂时未使用
-		 */
-		/*
-		if (!playerReady || !enemyReady) {
-
-			if (!playerReady) {
-				GUI.Label(new Rect(0, 40, Screen.width, 120), "xxx");
-			} else {
-				GUI.Label(new Rect(0, 40, Screen.width, 120), "等待对手开始");
-			}
-			if (GUI.Button (new Rect (Screen.width * 0.5f - 100, Screen.height * 0.5f - 150, 200, 30), "OK")) {
-				// player is ready
-				playerReady = true;
-				// 等待对手就绪?
-
-				// 暂时用随机生成的放置对手的小球
-
-				int i;
-				float rand_x, rand_y;
-				for (i = 0; i < 3; i++) {
-					// FIXME: 只能固定分辨率
-					//rand_x = Random.Range (0, Screen.width);
-					//rand_y = Random.Range (0, Screen.height);
-					rand_x = (Random.Range (0, 480) - 240) / 100.0f;
-					rand_y = Random.Range (0, 320) / 100.0f;
-
-					//Vector2 rand_pos = Camera.main.ScreenToWorldPoint(new Vector2(rand_x, rand_y));
-					Vector2 rand_pos = new Vector2(rand_x, rand_y);
-
-					Transform new_ball = Instantiate(enemyPrefab);
-					new_ball.position = rand_pos;
-					new_ball.name = "enemy" + i;
-					HealthScript hs = new_ball.GetComponent<HealthScript>();
-					hs.isEnemy = true;
-					//SpriteRenderer render = new_ball.GetComponent<SpriteRenderer>();
-					//render.sprite = ;
-				}
-				enemyReady = true;
-			}
-		
-			if (GUI.Button (new Rect (Screen.width * 0.5f - 100, Screen.height * 0.5f - 100, 200, 30), "Cancel")) {
-				// 返回标题画面
-				Application.LoadLevel("title");
-			}
-
-		}
-		*/
 	}
 
 	// 产生一个新的回合
-	void newRound()
+	void newRound(bool withStatic)
 	{
-		int i;
-
 		// 检查道具效果是否到期，如果到期则取消
-		GameObject[] actors = GameObject.FindGameObjectsWithTag ("player");
-		foreach (GameObject a in actors) {
+		//GameObject[] playerActors = GameObject.FindGameObjectsWithTag("player");
+		foreach (GameObject a in playerActors)
+		{
+			// 跳过inactive（已经死掉）的对象
+			if (a.activeInHierarchy == false)
+				continue;
 			HealthScript hs = a.GetComponent<HealthScript>();
-			if (hs.attackEnhanceTurnLeft > 0)
+			if (hs.attackEnhanceTurnLeft > 0) {
 				hs.attackEnhanceTurnLeft -= 1;
-			if (hs.attackEnhanceTurnLeft == 0)
-				hs.attack = 0;
+				if (hs.attackEnhanceTurnLeft == 0) {
+					hs.attack = 0;
+					hs.animator.SetBool("isFire", false);
+				}
+			}
 		}
 		
-		actors = GameObject.FindGameObjectsWithTag ("enemy");
-		foreach (GameObject a in actors) {
+		//GameObject[] enemyActors = GameObject.FindGameObjectsWithTag("enemy");
+		foreach (GameObject a in enemyActors)
+		{
+			// 跳过inactive（已经死掉）的对象
+			if (a.activeInHierarchy == false)
+				continue;
 			HealthScript hs = a.GetComponent<HealthScript>();
-			if (hs.attackEnhanceTurnLeft > 0)
+			if (hs.attackEnhanceTurnLeft > 0) {
 				hs.attackEnhanceTurnLeft -= 1;
-			if (hs.attackEnhanceTurnLeft == 0)
-				hs.attack = 0;
+				if (hs.attackEnhanceTurnLeft == 0) {
+					hs.attack = 0;
+					hs.animator.SetBool("isFire", false);
+				}
+			}
+		}
+		
+		GameObject[] itemObjects = GameObject.FindGameObjectsWithTag("items");
+		foreach (GameObject a in itemObjects) {
+			ItemScript iScript = a.GetComponent<ItemScript> ();
+			if (iScript == null) {
+				Debug.Log ("not an item: " + a);
+				continue;
+			}
+			if (iScript.isStatic)
+				continue;
+			iScript.availableTurnsLeft -= 1;
+			if (iScript.availableTurnsLeft == 0)
+				Destroy(a);
 		}
 
-		// 清除当前场上剩余道具
-		/*
-		GameObject[] items = GameObject.FindGameObjectsWithTag ("items");
-		foreach (GameObject item in items) {
-			;
-			Destroy (item);
-		}
-		*/
+		// 重新获取一次items
+		itemObjects = GameObject.FindGameObjectsWithTag("items");
 
 		// 随机生成新的道具
-		for (i = 0; i < createNewItem.Length; i++) {
-			//int p = Random.Range(0, 100);
-			//if (p >= itemProb[i])
-			if (!createNewItem[i])
+		int[] outX, outY;
+		bool[] outFlags;
+		int nItems = 0;
+		outFlags = new bool[itemProbs.Length];
+		outX = new int[itemProbs.Length];
+		outY = new int[itemProbs.Length];
+
+		// 道具0和1是静态道具，动态道具从2开始
+		int i = withStatic ? 0 : nStaticItems;
+		for (; i < itemProbs.Length; i++) {
+			outFlags[i] = false;
+			int p = Random.Range(0, 100);
+			if (p >= itemProbs[i])
 				continue;
-			//Vector2 pos = itemGenerator.allocItem();
-			Vector2 pos = newItemPos[i];
+
+			outFlags[i] = true;
+			while (!randomPos(1.5f, playerActors, enemyActors, itemObjects, out outX[i], out outY[i]));
+			Vector2 pos = new Vector2(outX[i] / 10.0f, outY[i] / 10.0f);
 			Transform iTransform = Instantiate(itemPrefabs[i]);
 			iTransform.position = pos;
+			nItems += 1;
 		}
-	}
-
-	void pending()
-	{
-		isPending = true;
-	}
-
-	void turn()
-	{
-		isEnemyTurn = !isEnemyTurn;
+		// 发送道具类型和位置给slave
+		client.sendNew (nItems, outFlags, outX, outY);
 	}
 }

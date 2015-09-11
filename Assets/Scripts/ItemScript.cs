@@ -10,17 +10,18 @@ public class ItemScript : MonoBehaviour {
 		Fire,
 	}
 	public ItemType type = ItemType.Score;
-	public int effectiveTurns = 1;			// 有效回合数
-	public int probability;					// 道具在每回合开始之前出现的概率
-	public int damage;						// 碰撞时收到的伤害
+	public int effectiveTurns = 1;				// 有效回合数
+	public int availableTurnsLeft = 3;			// 停留在场上的回合数
+	public int damage;							// 碰撞时收到的伤害
+	public bool isStatic;						// 是否静态道具
 
-	public bool isObstacle()
-	{
+	public bool isObstacle() {
 		return type == ItemType.Obstacle;
 	}
 
+	// 两个道具相撞，目前应该不会发生
 	void OnTriggerEnter2D(Collider2D otherCollider) {
-		if (type == ItemType.Obstacle || type == ItemType.Trap)
+		if (isStatic)
 			return;
 		Debug.Log ("item overlapped");
 		Destroy (gameObject);
