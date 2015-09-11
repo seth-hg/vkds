@@ -288,7 +288,7 @@ public class NetworkedScript : MonoBehaviour {
 				return;
 			}
 			fixedUpdateLoopCounter = 0;
-			Debug.Log ("pulling msg ... ");
+			//Debug.Log ("pulling msg ... ");
 			string[] resp;
 			// 从服务器拉取消息
 			if (!client.pullMsg(out resp)) {
