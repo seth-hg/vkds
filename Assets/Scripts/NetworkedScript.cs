@@ -361,6 +361,9 @@ public class NetworkedScript : MonoBehaviour {
 					Transform iTrans = Instantiate(itemPrefabs[itemID]);
 					iTrans.position = new Vector2(posX, posY);
 				}
+				
+				arrowEnemy.SetActive(true);
+				arrowPlayer.SetActive(false);
 				// 发送OK响应master
 				client.sendOK();
 			} else if (resp[0] == "MOVE") {
@@ -402,6 +405,8 @@ public class NetworkedScript : MonoBehaviour {
 				isOperating = true;
 				isPending = false;
 				isWaiting = false;
+				arrowEnemy.SetActive(false);
+				arrowPlayer.SetActive(true);
 				return;
 			} else if (resp[0] == "CLOSED") {
 				// 对方退出或掉线，游戏结束，自动获胜
