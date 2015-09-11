@@ -98,14 +98,15 @@ public class ClientScript : MonoBehaviour {
 	// master only. 发送随机道具的位置
 	public int sendNew(int n, bool[] flags, int[] x, int[] y) {
 
-		string header = string.Format("NEW:{0}:{1}:", roomID, playerID);
+		string req = string.Format("NEW:{0}:{1}", roomID, playerID);
 		string[] args = new string[n * 3];
 
 		// 三者必须相等
 		Debug.Assert (flags.Length == x.Length);
 		Debug.Assert (x.Length == y.Length);
 
-		for (int i = 0, j = 0; i < flags.Length; i++) {
+		int j = 0;
+		for (int i = 0; i < flags.Length; i++) {
 			if (flags[i] == false)
 				continue;
 			args[j * 3 + 0] = i.ToString();
@@ -114,7 +115,11 @@ public class ClientScript : MonoBehaviour {
 			j += 1;
 		}
 
-		string[] resp = sendrecv(header + string.Join (":", args) + "\n").Split(':');
+		if (j > 0) {
+			req = req + ":" + string.Join (":", args) + "\n";
+		}
+
+		string[] resp = sendrecv (req).Split (':');
 
 		if (resp[0] != "WAIT") {
 			Debug.Log ("failed receiving response from server");
@@ -241,6 +246,14 @@ public class ClientScript : MonoBehaviour {
 	public int sendClose() {
 
 		sendMsg (string.Format ("CLOSE:{0}:{1}\n", roomID, playerID));
+		
+		return 0;
+	}
+
+	// 发送close关闭游戏
+	public int sendCancel() {
+		
+		sendMsg (string.Format ("CANCEL:{0}:{1}\n", roomID, playerID));
 		
 		return 0;
 	}

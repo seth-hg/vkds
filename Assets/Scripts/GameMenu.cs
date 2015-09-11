@@ -29,12 +29,12 @@ public class GameMenu : MonoBehaviour {
 
     public void onClickExit()
     {
-        Application.LoadLevel("lose");
 		// 在网络模式下需发送CLOSE通知服务器
 		ClientScript cs = Camera.main.GetComponent<ClientScript> ();
 		//Debug.Log ("cs = " + cs);
 		if (cs != null)
 			cs.sendClose ();
+		Application.LoadLevel("lose");
     }
 
     public void onClickButton()

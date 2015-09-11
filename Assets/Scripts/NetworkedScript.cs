@@ -42,7 +42,8 @@ public class NetworkedScript : MonoBehaviour {
 	private bool isEnemyTurn = false;	// 对手回合
 	private bool isPending = false;		// 等待回合结束(所有物体停止运动)
 	private bool isWaiting = false;		// 等待对手消息
-	public int currentRound = 0;		// 当前回合数
+	private bool gameStarted = false;
+	//public int currentRound = 0;		// 当前回合数
 
 	// drawing arrow & attack
 	private bool mouse_clicked = false;
@@ -130,9 +131,11 @@ public class NetworkedScript : MonoBehaviour {
 			obj = GameObject.Find("ball" + (i+1));
 			Debug.Assert(obj != null);
 			playerActors[i] = obj;
+			obj.SetActive(false);
 			obj = GameObject.Find("enemy" + (i+1));
 			Debug.Assert(obj != null);
 			enemyActors[i] = obj;
+			obj.SetActive(false);
 		}
 
 		// 指向箭头
@@ -229,6 +232,18 @@ public class NetworkedScript : MonoBehaviour {
 		}
 	}
 
+	void startGame() {
+		GameObject.Find("DialogWaiting").GetComponent<WaitingScript>().hideDialog();
+
+		foreach (GameObject a in playerActors)
+			a.SetActive (true);
+		foreach (GameObject a in enemyActors)
+			a.SetActive (true);
+
+		newRound(true);
+		gameStarted = true;
+	}
+
 	void FixedUpdate() {
 		debugStr = string.Format ("{0}:{1}:{2}", gameStatus.ToString (), isWaiting, isOperating);
 		//Debug.Log ("FixedUpdate: " + isOperating + isWaiting);
@@ -236,7 +251,7 @@ public class NetworkedScript : MonoBehaviour {
 		if (isOperating)
 			return;
 
-		if (isPending) {
+		if (gameStarted && isPending) {
 			int nPlayers = 0, nEnemies = 0;
 			foreach (GameObject a in playerActors) {
 				if (a.activeInHierarchy == false)
@@ -304,8 +319,9 @@ public class NetworkedScript : MonoBehaviour {
 				// master发布下一阶段指令
 				switch (gameStatus) {
 				case ST_NEW:
-					// slave加入，第一回合开始
-					newRound(true);
+					// slave加入，master开始游戏第一回合
+					// 隐藏等待窗口
+					startGame();
 					isWaiting = true;
 					isOperating = false;
 					break;
@@ -331,11 +347,16 @@ public class NetworkedScript : MonoBehaviour {
 			} else if (resp[0] == "NEW") {
 				Debug.Assert(!client.isMaster());
 				// 收到master命令，开始新回合，创建动态道具
+				if (gameStarted == false) {
+					// 首回合
+					startGame();
+				}
 				int len = resp.Length;
 				for (int i = 3; i < len; i += 3) {
 					int itemID = int.Parse(resp[i]);
-					float posX = int.Parse(resp[i+1]) / 10.0f;
-					float posY = int.Parse(resp[i+2]) / 10.0f;
+					// master和slave屏幕方向相反，因此坐标取反
+					float posX = int.Parse(resp[i+1]) / -10.0f;
+					float posY = int.Parse(resp[i+2]) / -10.0f;
 
 					Transform iTrans = Instantiate(itemPrefabs[itemID]);
 					iTrans.position = new Vector2(posX, posY);
@@ -490,33 +511,37 @@ public class NetworkedScript : MonoBehaviour {
 				Destroy(a);
 		}
 
-		// 重新获取一次items
-		itemObjects = GameObject.FindGameObjectsWithTag("items");
+		// master负责生成道具，slave跳过次步骤
+		if (client.isMaster ()) {
+			// 重新获取一次items
+			itemObjects = GameObject.FindGameObjectsWithTag ("items");
 
-		// 随机生成新的道具
-		int[] outX, outY;
-		bool[] outFlags;
-		int nItems = 0;
-		outFlags = new bool[itemProbs.Length];
-		outX = new int[itemProbs.Length];
-		outY = new int[itemProbs.Length];
+			// 随机生成新的道具
+			int[] outX, outY;
+			bool[] outFlags;
+			int nItems = 0;
+			outFlags = new bool[itemProbs.Length];
+			outX = new int[itemProbs.Length];
+			outY = new int[itemProbs.Length];
 
-		// 道具0和1是静态道具，动态道具从2开始
-		int i = withStatic ? 0 : nStaticItems;
-		for (; i < itemProbs.Length; i++) {
-			outFlags[i] = false;
-			int p = Random.Range(0, 100);
-			if (p >= itemProbs[i])
-				continue;
+			// 道具0和1是静态道具，动态道具从2开始
+			int i = withStatic ? 0 : nStaticItems;
+			for (; i < itemProbs.Length; i++) {
+				outFlags [i] = false;
+				int p = Random.Range (0, 100);
+				if (p >= itemProbs [i])
+					continue;
 
-			outFlags[i] = true;
-			while (!randomPos(1.5f, playerActors, enemyActors, itemObjects, out outX[i], out outY[i]));
-			Vector2 pos = new Vector2(outX[i] / 10.0f, outY[i] / 10.0f);
-			Transform iTransform = Instantiate(itemPrefabs[i]);
-			iTransform.position = pos;
-			nItems += 1;
+				outFlags [i] = true;
+				while (!randomPos(1.2f, playerActors, enemyActors, itemObjects, out outX[i], out outY[i]))
+					;
+				Vector2 pos = new Vector2 (outX [i] / 10.0f, outY [i] / 10.0f);
+				Transform iTransform = Instantiate (itemPrefabs [i]);
+				iTransform.position = pos;
+				nItems += 1;
+			}
+			// 发送道具类型和位置给slave
+			client.sendNew (nItems, outFlags, outX, outY);
 		}
-		// 发送道具类型和位置给slave
-		client.sendNew (nItems, outFlags, outX, outY);
 	}
 }

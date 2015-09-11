@@ -1,11 +1,13 @@
 ﻿<Properties>
-  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" />
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" PreferredExecutionTarget="MonoDevelop.Default" />
   <MonoDevelop.Ide.Workbench ActiveDocument="Assets\Scripts\NetworkedScript.cs">
     <Files>
+      <File FileName="Assets\Scripts\NetworkedScript.cs" Line="239" Column="11" />
       <File FileName="Assets\Scripts\MainMenu.cs" Line="1" Column="1" />
-      <File FileName="Assets\Scripts\CameraScript.cs" Line="389" Column="10" />
-      <File FileName="Assets\Scripts\NetworkedScript.cs" Line="291" Column="6" />
-      <File FileName="Assets\Scripts\ResultMenu.cs" Line="13" Column="6" />
+      <File FileName="Assets\Scripts\CameraScript.cs" Line="1" Column="1" />
+      <File FileName="Assets\Scripts\ResultMenu.cs" Line="1" Column="1" />
+      <File FileName="Assets\Scripts\WaitingScript.cs" Line="23" Column="23" />
+      <File FileName="Assets\Scripts\GameMenu.cs" Line="1" Column="1" />
     </Files>
   </MonoDevelop.Ide.Workbench>
   <MonoDevelop.Ide.DebuggingService.Breakpoints>

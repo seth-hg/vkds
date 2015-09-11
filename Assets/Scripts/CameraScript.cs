@@ -382,7 +382,7 @@ public class CameraScript : MonoBehaviour
 			itemObjects = GameObject.FindGameObjectsWithTag("items");
 
 			int outX, outY;
-			while (!randomPos(1.0f, playerActors, enemyActors, itemObjects, out outX, out outY));
+			while (!randomPos(1.2f, playerActors, enemyActors, itemObjects, out outX, out outY));
 			Vector2 pos = new Vector2(outX / 10.0f, outY / 10.0f);
 			Transform iTransform = Instantiate(itemPrefabs[i]);
 			iTransform.position = pos;
